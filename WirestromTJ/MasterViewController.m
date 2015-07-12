@@ -9,38 +9,29 @@
 #import "MasterViewController.h"
 #import "DetailViewController.h"
 
+#import "AFNetworking.h"
+#import <UIImageView+AFNetworking.h>
+#import "KMKDimmedViewWithActivityIndicator.h"
+
+
 @interface MasterViewController ()
 
-@property NSMutableArray *objects;
+@property NSArray *objects;
+
 @end
 
-@implementation MasterViewController
-
-- (void)awakeFromNib {
-    [super awakeFromNib];
+@implementation MasterViewController {
+    KMKDimmedViewWithActivityIndicator *_viewWithIndicator;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    // Do any additional setup after loading the view, typically from a nib.
-    self.navigationItem.leftBarButtonItem = self.editButtonItem;
-
-    UIBarButtonItem *addButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(insertNewObject:)];
-    self.navigationItem.rightBarButtonItem = addButton;
-}
-
-- (void)didReceiveMemoryWarning {
-    [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
-}
-
-- (void)insertNewObject:(id)sender {
-    if (!self.objects) {
-        self.objects = [[NSMutableArray alloc] init];
-    }
-    [self.objects insertObject:[NSDate date] atIndex:0];
-    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:0];
-    [self.tableView insertRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+    
+    _viewWithIndicator = [KMKDimmedViewWithActivityIndicator new];
+    [self.view addSubview:_viewWithIndicator];
+    [_viewWithIndicator adjustToBoundsOfSuperView];
+    
+    [self queryPersons];
 }
 
 #pragma mark - Segues
@@ -66,23 +57,58 @@
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell" forIndexPath:indexPath];
 
-    NSDate *object = self.objects[indexPath.row];
-    cell.textLabel.text = [object description];
+    NSDictionary *object = self.objects[indexPath.row];
+    cell.textLabel.text = [object valueForKey:@"name"];
+    cell.detailTextLabel.text = [object valueForKey:@"position"];
+    NSURL *url = [NSURL URLWithString:[object valueForKey:@"smallpic"]];
+    
+    NSURLRequest *request = [NSURLRequest requestWithURL:url];
+    __weak UITableViewCell *weakCell = cell;
+
+    [cell.imageView setImageWithURLRequest:request
+                          placeholderImage:nil
+                                   success:^(NSURLRequest *request, NSHTTPURLResponse *response, UIImage *image) {
+                                       weakCell.imageView.image = image;
+                                       [weakCell setNeedsLayout];
+                                       
+                                   } failure:^(NSURLRequest *request, NSHTTPURLResponse *response, NSError *error) {
+                                       
+                                   }];
+    
     return cell;
 }
 
-- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
-    // Return NO if you do not want the specified item to be editable.
-    return YES;
-}
+- (void)queryPersons {
+    
+    [_viewWithIndicator showActivityIndicator];
+    
+    NSString *string = @"https://s3-us-west-2.amazonaws.com/wirestorm/assets/response.json";
+    NSURL *url = [NSURL URLWithString:string];
+    NSURLRequest *request = [NSURLRequest requestWithURL:url];
+    
+    AFHTTPRequestOperation *operation = [[AFHTTPRequestOperation alloc] initWithRequest:request];
+    operation.responseSerializer = [AFJSONResponseSerializer serializer];
+    
+    [operation setCompletionBlockWithSuccess:^(AFHTTPRequestOperation *operation, id responseObject) {
+        
+        [_viewWithIndicator hideActivityIndicator];
 
-- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (editingStyle == UITableViewCellEditingStyleDelete) {
-        [self.objects removeObjectAtIndex:indexPath.row];
-        [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
-    } else if (editingStyle == UITableViewCellEditingStyleInsert) {
-        // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view.
-    }
+        self.objects = (NSArray *)responseObject;
+        [self.tableView reloadData];
+        
+    } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
+        
+        [_viewWithIndicator hideActivityIndicator];
+        
+        UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:@"Error Retrieving Objects"
+                                                            message:[error localizedDescription]
+                                                           delegate:nil
+                                                  cancelButtonTitle:@"Ok"
+                                                  otherButtonTitles:nil];
+        [alertView show];
+    }];
+    
+    [operation start];
 }
 
 @end
